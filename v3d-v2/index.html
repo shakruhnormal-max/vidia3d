@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D Video Overlay Editor</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-0: #0e0e10;
+    --bg-1: #161618;
+    --bg-2: #1e1e21;
+    --bg-3: #28282d;
+    --bg-4: #333338;
+    --border: #3a3a40;
+    --accent: #5b6af0;
+    --accent-h: #7b88ff;
+    --accent-d: #3a4ad0;
+    --green: #3ecf6a;
+    --red: #f05b5b;
+    --yellow: #f0c05b;
+    --text-0: #e8e8ec;
+    --text-1: #a0a0aa;
+    --text-2: #606068;
+    --radius: 4px;
+    --panel-w: 220px;
+    --props-w: 260px;
+    --timeline-h: 180px;
+  }
+
+  html, body { height: 100%; overflow: hidden; background: var(--bg-0); color: var(--text-0); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 12px; }
+
+  #app { display: grid; grid-template-columns: var(--panel-w) 1fr var(--props-w); grid-template-rows: 40px 1fr var(--timeline-h); height: 100vh; }
+
+  /* TOPBAR */
+  #topbar {
+    grid-column: 1 / -1;
+    background: var(--bg-1);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px; padding: 0 12px;
+  }
+  .logo { font-weight: 700; font-size: 13px; color: var(--accent-h); letter-spacing: 0.5px; margin-right: 8px; }
+  .tb-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+  .tb-btn {
+    background: var(--bg-3); border: 1px solid var(--border); color: var(--text-0);
+    padding: 4px 10px; border-radius: var(--radius); cursor: pointer; font-size: 11px;
+    transition: background 0.15s;
+  }
+  .tb-btn:hover { background: var(--bg-4); }
+  .tb-btn.primary { background: var(--accent); border-color: var(--accent-d); }
+  .tb-btn.primary:hover { background: var(--accent-h); }
+  .tb-spacer { flex: 1; }
+  #export-btn { background: var(--green); border-color: #2aaf52; color: #000; font-weight: 600; }
+  #export-btn:hover { background: #5adf8a; }
+
+  /* LEFT PANEL */
+  #panel-left {
+    background: var(--bg-1);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .panel-header {
+    padding: 8px 10px; font-size: 11px; font-weight: 600; color: var(--text-1);
+    text-transform: uppercase; letter-spacing: 0.8px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .panel-header button {
+    background: var(--accent); border: none; color: #fff; border-radius: var(--radius);
+    width: 18px; height: 18px; cursor: pointer; font-size: 14px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #layers-list { flex: 1; overflow-y: auto; padding: 4px; }
+  .layer-item {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 6px; border-radius: var(--radius);
+    cursor: pointer; border: 1px solid transparent;
+    margin-bottom: 2px; transition: background 0.1s;
+  }
+  .layer-item:hover { background: var(--bg-3); }
+  .layer-item.selected { background: var(--bg-3); border-color: var(--accent); }
+  .layer-thumb {
+    width: 28px; height: 28px; border-radius: 3px; background: var(--bg-4);
+    flex-shrink: 0; overflow: hidden; display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .layer-info { flex: 1; min-width: 0; }
+  .layer-name { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .layer-time { font-size: 10px; color: var(--text-2); margin-top: 1px; }
+  .layer-actions { display: flex; gap: 2px; }
+  .layer-btn {
+    width: 20px; height: 20px; border: none; background: none; color: var(--text-2);
+    cursor: pointer; border-radius: 3px; font-size: 12px; display: flex; align-items: center; justify-content: center;
+  }
+  .layer-btn:hover { background: var(--bg-4); color: var(--text-0); }
+  .layer-btn.active { color: var(--text-0); }
+
+  #video-drop-zone {
+    margin: 8px; padding: 16px 8px; border: 1px dashed var(--border);
+    border-radius: var(--radius); text-align: center; color: var(--text-2);
+    cursor: pointer; transition: border-color 0.2s, color 0.2s;
+    font-size: 11px; line-height: 1.5;
+  }
+  #video-drop-zone:hover, #video-drop-zone.drag-over { border-color: var(--accent); color: var(--accent-h); }
+
+  /* CENTER */
+  #panel-center {
+    background: var(--bg-0);
+    display: flex; flex-direction: column;
+    overflow: hidden; position: relative;
+  }
+  #canvas-wrap {
+    flex: 1; position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #main-canvas {
+    display: block; max-width: 100%; max-height: 100%;
+    cursor: default;
+  }
+  #drop-hint {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--text-2); gap: 10px; pointer-events: none;
+  }
+  #drop-hint.hidden { display: none; }
+  #drop-hint svg { opacity: 0.3; }
+  #drop-hint p { font-size: 13px; }
+  #playbar {
+    background: var(--bg-1); border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+    flex-shrink: 0;
+  }
+  .play-btn {
+    width: 30px; height: 30px; border-radius: 50%; border: none;
+    background: var(--accent); color: #fff; cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s;
+  }
+  .play-btn:hover { background: var(--accent-h); }
+  #time-display { font-size: 11px; color: var(--text-1); font-variant-numeric: tabular-nums; min-width: 90px; }
+  #seek-bar {
+    flex: 1; height: 4px; background: var(--bg-3); border-radius: 2px;
+    cursor: pointer; position: relative; appearance: none; border: none;
+    accent-color: var(--accent);
+  }
+
+  /* RIGHT PANEL */
+  #panel-right {
+    background: var(--bg-1);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  #props-content { flex: 1; overflow-y: auto; padding: 8px; }
+  .prop-section {
+    margin-bottom: 12px;
+  }
+  .prop-section-title {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.8px; color: var(--text-2); margin-bottom: 6px;
+    padding-bottom: 4px; border-bottom: 1px solid var(--border);
+  }
+  .prop-row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+  .prop-label { font-size: 11px; color: var(--text-1); min-width: 64px; flex-shrink: 0; }
+  .prop-input {
+    flex: 1; background: var(--bg-3); border: 1px solid var(--border);
+    color: var(--text-0); padding: 3px 6px; border-radius: var(--radius);
+    font-size: 11px; min-width: 0;
+  }
+  .prop-input:focus { outline: none; border-color: var(--accent); }
+  .prop-input[type="range"] {
+    padding: 0; background: none; border: none; height: 4px;
+    accent-color: var(--accent); cursor: pointer;
+  }
+  .prop-input[type="checkbox"] { width: 14px; height: 14px; flex: none; accent-color: var(--accent); cursor: pointer; }
+  .prop-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+  .prop-3col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; }
+  .prop-sublabel { font-size: 10px; color: var(--text-2); text-align: center; margin-top: 2px; }
+  select.prop-input { cursor: pointer; }
+  #no-selection { padding: 20px 12px; text-align: center; color: var(--text-2); font-size: 11px; line-height: 1.6; }
+
+  .btn-sm {
+    background: var(--bg-3); border: 1px solid var(--border); color: var(--text-0);
+    padding: 3px 8px; border-radius: var(--radius); cursor: pointer; font-size: 11px;
+  }
+  .btn-sm:hover { background: var(--bg-4); }
+  .btn-sm.danger { color: var(--red); }
+  .btn-sm.success { color: var(--green); }
+
+  /* TIMELINE */
+  #panel-timeline {
+    grid-column: 1 / -1;
+    background: var(--bg-1);
+    border-top: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  #timeline-header {
+    display: flex; align-items: center; padding: 4px 8px; gap: 8px;
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  #timeline-canvas-wrap {
+    flex: 1; overflow: hidden; position: relative;
+  }
+  #timeline-canvas { display: block; cursor: pointer; }
+
+  /* EXPORT MODAL */
+  #export-modal {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.75); z-index: 1000;
+    align-items: center; justify-content: center;
+  }
+  #export-modal.open { display: flex; }
+  .modal-box {
+    background: var(--bg-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 24px; min-width: 360px; max-width: 420px; width: 100%;
+  }
+  .modal-title { font-size: 14px; font-weight: 600; margin-bottom: 16px; }
+  .modal-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .modal-label { font-size: 11px; color: var(--text-1); min-width: 90px; }
+  .modal-select {
+    flex: 1; background: var(--bg-3); border: 1px solid var(--border);
+    color: var(--text-0); padding: 5px 8px; border-radius: var(--radius); font-size: 12px;
+  }
+  .modal-section-title {
+    font-size: 10px; font-weight: 600; color: var(--text-2);
+    text-transform: uppercase; letter-spacing: 0.6px;
+    margin: 14px 0 8px; border-top: 1px solid var(--border); padding-top: 10px;
+  }
+  /* Radio range buttons */
+  .range-radio-row { display: flex; gap: 6px; margin-bottom: 10px; }
+  .range-radio-row label {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    gap: 5px; padding: 5px 8px; border-radius: var(--radius);
+    border: 1px solid var(--border); background: var(--bg-3);
+    cursor: pointer; font-size: 11px; color: var(--text-1);
+    transition: all 0.15s;
+  }
+  .range-radio-row input[type=radio] { display: none; }
+  .range-radio-row input[type=radio]:checked + span { color: var(--accent-h); }
+  .range-radio-row label:has(input:checked) {
+    border-color: var(--accent); background: var(--bg-4); color: var(--text-0);
+  }
+  /* Custom range inputs */
+  #exp-custom-range {
+    display: none; gap: 6px; align-items: center; margin-bottom: 10px;
+  }
+  #exp-custom-range input[type=number] {
+    flex: 1; background: var(--bg-3); border: 1px solid var(--border);
+    color: var(--text-0); padding: 5px 8px; border-radius: var(--radius);
+    font-size: 12px; text-align: center;
+  }
+  #exp-custom-range .range-sep { color: var(--text-2); font-size: 11px; flex-shrink: 0; }
+  /* Note */
+  .modal-note {
+    font-size: 10px; color: var(--text-2); margin: 8px 0 2px;
+    line-height: 1.5; padding: 6px 8px; background: var(--bg-3);
+    border-radius: var(--radius); border-left: 2px solid var(--border);
+  }
+  .modal-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+  #export-progress { margin-top: 12px; display: none; }
+  #export-progress progress { width: 100%; height: 6px; accent-color: var(--accent); }
+  #export-status { font-size: 11px; color: var(--text-1); margin-top: 4px; min-height: 16px; }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg-1); }
+  ::-webkit-scrollbar-thumb { background: var(--bg-4); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border); }
+
+  /* BG REMOVE MODAL */
+  #bgr-modal {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.80); z-index: 1000;
+    align-items: center; justify-content: center;
+  }
+  #bgr-modal.open { display: flex; }
+  .bgr-panels { display: flex; gap: 16px; margin: 10px 0; }
+  .bgr-panel { flex: 1; }
+  .bgr-panel-label { font-size: 10px; color: var(--text-2); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .5px; }
+  #bgr-source, #bgr-result {
+    display: block; width: 100%; max-height: 280px; object-fit: contain;
+    border: 1px solid var(--border); border-radius: 4px; cursor: crosshair;
+  }
+  #bgr-result { background: repeating-conic-gradient(#2a2a2a 0% 25%,#1a1a1a 0% 50%) 0 0 / 14px 14px; }
+  .bgr-section { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+  .bgr-section-title { font-size: 9px; text-transform: uppercase; letter-spacing: .8px; color: var(--text-2); margin-bottom: 6px; }
+  .bgr-api-row { display: flex; gap: 6px; align-items: center; }
+  .bgr-api-inp {
+    flex: 1; background: var(--bg-3); border: 1px solid var(--border); color: var(--text-0);
+    padding: 4px 8px; border-radius: var(--radius); font-size: 11px; font-family: monospace;
+  }
+  .bgr-api-inp:focus { outline: none; border-color: var(--accent); }
+  .bgr-local-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+  #bgr-status { font-size: 10px; color: var(--text-2); margin-top: 6px; min-height: 14px; }
+
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- TOPBAR -->
+  <div id="topbar">
+    <span class="logo">▶ 3D Overlay</span>
+    <div class="tb-sep"></div>
+    <button class="tb-btn" id="load-video-btn">📹 Видео</button>
+    <button class="tb-btn" id="load-image-btn">🖼 Изображение</button>
+    <div class="tb-sep"></div>
+    <button class="tb-btn" id="save-project-btn">💾 Сохранить</button>
+    <button class="tb-btn" id="load-project-btn">📂 Открыть</button>
+    <div class="tb-spacer"></div>
+    <button class="tb-btn primary" id="export-btn">⬇ Экспорт MP4</button>
+  </div>
+
+  <!-- LEFT: LAYERS -->
+  <div id="panel-left">
+    <div class="panel-header">
+      Слои
+      <button id="add-obj-btn" title="Добавить объект из файла">+</button>
+    </div>
+    <div id="video-drop-zone">
+      <div>📹</div>
+      <div>Перетащите видео сюда<br>или нажмите «Видео»</div>
+    </div>
+    <div id="layers-list"></div>
+  </div>
+
+  <!-- CENTER: PREVIEW -->
+  <div id="panel-center">
+    <div id="canvas-wrap">
+      <canvas id="main-canvas" width="1280" height="720"></canvas>
+      <div id="drop-hint">
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+          <rect x="4" y="4" width="40" height="32" rx="4" stroke="#666" stroke-width="2"/>
+          <polygon points="18,14 34,24 18,34" fill="#666"/>
+          <rect x="12" y="40" width="24" height="3" rx="1.5" fill="#666"/>
+        </svg>
+        <p>Загрузите видео для начала работы</p>
+      </div>
+    </div>
+    <div id="playbar">
+      <button class="play-btn" id="play-btn">▶</button>
+      <span id="time-display">0:00.000 / 0:00.000</span>
+      <input type="range" id="seek-bar" min="0" max="1000" value="0" step="1">
+    </div>
+  </div>
+
+  <!-- RIGHT: PROPERTIES -->
+  <div id="panel-right">
+    <div class="panel-header">Свойства</div>
+    <div id="props-content">
+      <div id="no-selection">Выберите объект<br>в списке слоёв</div>
+      <div id="props-body" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- TIMELINE -->
+  <div id="panel-timeline">
+    <div id="timeline-header">
+      <span style="font-size:10px;color:var(--text-2);font-weight:600;text-transform:uppercase;letter-spacing:.8px">Таймлайн</span>
+      <div style="flex:1"></div>
+      <span style="font-size:10px;color:var(--text-2)" id="tl-zoom-label">Масштаб:</span>
+      <button class="btn-sm" id="tl-zoom-in">+</button>
+      <button class="btn-sm" id="tl-zoom-out">−</button>
+    </div>
+    <div id="timeline-canvas-wrap">
+      <canvas id="timeline-canvas"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- EXPORT MODAL -->
+<div id="export-modal">
+  <div class="modal-box">
+    <div class="modal-title">⬇ Экспорт видео</div>
+
+    <!-- Формат -->
+    <div class="modal-section-title">Формат</div>
+    <div class="modal-row">
+      <span class="modal-label">Тип файла</span>
+      <select class="modal-select" id="exp-format">
+        <option value="mp4" selected>MP4 — H.264 (рекомендуется)</option>
+        <option value="gif">GIF (макс. 480p, 15fps)</option>
+      </select>
+    </div>
+
+    <!-- Параметры -->
+    <div class="modal-section-title">Параметры</div>
+    <div class="modal-row">
+      <span class="modal-label">Разрешение</span>
+      <select class="modal-select" id="exp-res">
+        <option value="720">720p</option>
+        <option value="1080" selected>1080p</option>
+        <option value="1440">1440p</option>
+        <option value="2160">4K</option>
+      </select>
+    </div>
+    <div class="modal-row">
+      <span class="modal-label">FPS</span>
+      <select class="modal-select" id="exp-fps">
+        <option value="24">24 fps</option>
+        <option value="30" selected>30 fps</option>
+        <option value="60">60 fps</option>
+      </select>
+    </div>
+
+    <!-- Диапазон -->
+    <div class="modal-section-title">Диапазон рендера</div>
+    <div class="range-radio-row">
+      <label>
+        <input type="radio" name="exp-range" value="full" checked>
+        <span>🎞 Весь таймлайн</span>
+      </label>
+      <label>
+        <input type="radio" name="exp-range" value="custom">
+        <span>✂️ Свой отрезок</span>
+      </label>
+    </div>
+    <div id="exp-custom-range">
+      <input type="number" id="exp-range-start" value="0" min="0" step="0.1" placeholder="от (с)">
+      <span class="range-sep">→</span>
+      <input type="number" id="exp-range-end" value="10" min="0" step="0.1" placeholder="до (с)">
+      <span class="range-sep" style="color:var(--text-1)">сек</span>
+    </div>
+    <div class="modal-note" id="exp-format-note">
+      MP4 рендерится покадрово и записывается через MediaRecorder прямо в браузере — никаких серверов и внешних зависимостей. Chrome сохраняет WebM/VP8, Safari — H.264. Файл скачивается как .mp4.
+    </div>
+
+    <!-- Прогресс -->
+    <div id="export-progress">
+      <progress id="export-pbar" value="0" max="100"></progress>
+      <div id="export-status"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-sm" id="exp-cancel-btn">Отмена</button>
+      <button class="tb-btn primary" id="exp-start-btn">Начать экспорт</button>
+    </div>
+  </div>
+</div>
+
+<!-- BG REMOVE MODAL -->
+<div id="bgr-modal">
+  <div class="modal-box" style="min-width:560px;max-width:700px;width:90vw">
+    <div class="modal-title">✂ Удаление фона</div>
+
+    <!-- Превью -->
+    <div class="bgr-panels">
+      <div class="bgr-panel">
+        <div class="bgr-panel-label">Оригинал <span style="font-size:9px;color:var(--text-2)">(нажмите для выбора цвета)</span></div>
+        <canvas id="bgr-source"></canvas>
+      </div>
+      <div class="bgr-panel">
+        <div class="bgr-panel-label">Результат</div>
+        <canvas id="bgr-result"></canvas>
+      </div>
+    </div>
+
+    <!-- AI: remove.bg -->
+    <div class="bgr-section">
+      <div class="bgr-section-title">🤖 Автоматически (remove.bg AI)</div>
+      <div class="bgr-api-row">
+        <input class="bgr-api-inp" id="bgr-api-key" type="password" placeholder="API-ключ remove.bg (api.remove.bg)">
+        <button class="tb-btn primary" id="bgr-auto-btn" style="white-space:nowrap">🪄 Удалить фон</button>
+      </div>
+      <div style="font-size:9px;color:var(--text-2);margin-top:4px">
+        Получите бесплатный ключ на <a href="https://www.remove.bg/api" target="_blank" style="color:var(--accent)">remove.bg/api</a> (50 бесплатных фото/мес)
+      </div>
+    </div>
+
+    <!-- Ручной -->
+    <div class="bgr-section">
+      <div class="bgr-section-title">🎨 Вручную (по цвету / яркости)</div>
+      <div class="bgr-local-row">
+        <span style="font-size:11px;color:var(--text-1)">Порог:</span>
+        <input type="range" id="bgr-threshold" min="1" max="128" value="30" style="width:100px;accent-color:var(--accent)">
+        <span id="bgr-threshold-val" style="font-size:11px;color:var(--text-1);min-width:20px">30</span>
+        <select id="bgr-method" class="modal-select" style="width:auto;padding:3px 6px">
+          <option value="bright">Светлый фон</option>
+          <option value="dark">Тёмный фон</option>
+          <option value="color">Цветовой ключ (кликните на фон)</option>
+        </select>
+        <button class="tb-btn" id="bgr-preview-btn">Предпросмотр</button>
+      </div>
+    </div>
+
+    <!-- Статус -->
+    <div id="bgr-status"></div>
+
+    <!-- Кнопки -->
+    <div class="modal-actions">
+      <button class="btn-sm" id="bgr-cancel-btn">Отмена</button>
+      <button class="tb-btn primary" id="bgr-apply-btn">✔ Применить</button>
+    </div>
+  </div>
+</div>
+
+<!-- HIDDEN INPUTS -->
+<input type="file" id="file-video" accept="video/mp4,video/webm,video/quicktime" style="display:none">
+<input type="file" id="file-image" accept="image/png,image/jpeg,image/webp" style="display:none" multiple>
+<input type="file" id="file-project" accept=".json" style="display:none">
+
+<!-- SCRIPTS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/state.js"></script>
+<script src="js/bgremove.js"></script>
+<script src="js/object3d.js"></script>
+<script src="js/scene.js"></script>
+<script src="js/timeline.js"></script>
+<script src="js/properties.js"></script>
+<script src="js/layers.js"></script>
+<script src="js/export.js"></script>
+<script src="js/main.js"></script>
+<script>
+  /* Обновляем подсказку при смене формата */
+  const _formatNotes = {
+    mp4: 'MP4 рендерится покадрово и записывается через MediaRecorder прямо в браузере — никаких серверов и внешних зависимостей. Chrome сохраняет WebM/VP8, Safari — H.264. Файл скачивается как .mp4.',
+    gif: 'GIF ограничен 480p и 15 fps — иначе файл будет огромным. Кодирование идёт в браузере через gif.js.'
+  };
+  document.getElementById('exp-format').addEventListener('change', function() {
+    document.getElementById('exp-format-note').textContent = _formatNotes[this.value] || '';
+  });
+</script>
+</body>
+</html>
